@@ -123,6 +123,15 @@ jobs:
       # NOTE: also update in CMakeLists FetchContent
       SFML_VERSION: "2023-06-21-2.6.0"
 
+      # NOTE: replace with another version if this one does not work
+      # For more versions, see https://winlibs.com or
+      # https://github.com/brechtsanders/winlibs_mingw/releases/
+      MINGW_CACHE_KEY: "gcc-12.3-msvcrt-r1"
+      MINGW_VER: "12.3.0-16.0.4-11.0.0-msvcrt-r1/winlibs-x86_64-posix-seh-gcc-12.3.0-mingw-w64msvcrt-11.0.0-r1.7z"
+      # Example:
+      # MINGW_CACHE_KEY: "gcc-13.2-msvcrt-r1"
+      # MINGW_VER: "13.2.0-16.0.6-11.0.1-msvcrt-r1/winlibs-x86_64-posix-seh-gcc-13.2.0-mingw-w64msvcrt-11.0.1-r1.7z"
+
     strategy:
       fail-fast: false
       matrix:
@@ -164,11 +173,11 @@ jobs:
             # runs_asan: true
 
           # - os: macos-12
-          #   c: gcc-11
-          #   cxx: g++-11
-          #   name: "macOS 12 GCC 11"
+          #   c: gcc-12
+          #   cxx: g++-12
+          #   name: "macOS 12 GCC 12"
           #   cmake_flags:
-          #   cmake_generator:
+          #   cmake_generator: Ninja
 
           - os: windows-2022
             c: cl
@@ -182,7 +191,7 @@ jobs:
           - os: windows-2022
             c: gcc
             cxx: g++
-            name: "Windows 2022 MinGW GCC 11"
+            name: "Windows 2022 MinGW GCC 12"
             cmake_flags: -DBUILD_SHARED_LIBS=TRUE
             cmake_generator: Ninja
 
@@ -220,16 +229,16 @@ jobs:
           libxkbcommon-x11-0 \
           libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
 
-      - name: Install ninja (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install ninja
-
       # - name: Install ninja and libc++ (Linux Clang 14)
       #   if: runner.os == 'Linux' && matrix.runs_msan == true
       #   run: |
       #     # sudo apt-get update
       #     sudo apt-get install --no-install-recommends ninja-build libc++-14-dev libc++abi-14-dev
+
+      - name: Install ninja (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ninja
 
       - name: Install valgrind
         if: runner.os == 'Linux' && matrix.runs_valgrind == true
@@ -265,6 +274,16 @@ jobs:
           mv artifacts/${{ env.BIN_DIR }}/* ${{ env.ZIP_NAME }}
           ls -la ${{ env.ZIP_NAME }}
           cp "${INPUT_FILENAME}" ${{ env.ZIP_NAME }}
+
+      - name: Copy missing dylibs
+        if: runner.os == 'macOS' && matrix.cxx == 'clang++'
+        run: |
+          mkdir lib
+          cp /Library/Developer/CommandLineTools/usr/lib/clang/14.0.0/lib/darwin/libclang_rt.asan_osx_dynamic.dylib lib
+          install_name_tool -change @rpath/libclang_rt.asan_osx_dynamic.dylib @executable_path/lib/libclang_rt.asan_osx_dynamic.dylib ${{ env.ZIP_NAME }}/${{ env.EXECUTABLE_NAME }}
+          ls -1 artifacts/lib | grep framework | xargs -I% ls artifacts/lib/%/Versions/A | grep -v "Resources" | xargs -I% cp artifacts/lib/%.framework/% lib
+          ls -1 artifacts/lib | grep framework | xargs -I% ls artifacts/lib/%/Versions/A | grep -v "Resources" | xargs -I% install_name_tool -change @rpath/../Frameworks/%.framework/Versions/A/% @executable_path/lib/% ${{ env.ZIP_NAME }}/${{ env.EXECUTABLE_NAME }}
+          mv lib ${{ env.ZIP_NAME }}/
 
       - name: Copy missing dlls
         if: runner.os == 'Windows' && matrix.cxx == 'cl'
